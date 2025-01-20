@@ -1,38 +1,76 @@
-from selenium import webdriver
-from selenium.webdriver import ActionChains
-from selenium.webdriver.common.by import By
-import bs4 as bs
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.support.wait import WebDriverWait
+import os
+import time
 
-allURLs = []
-def getting_url_from_gradcracker():
-    driver = webdriver.Firefox()
-    driver.get("https://www.gradcracker.com/search/computing-technology/graduate-jobs")
-    action_for_cookies = driver.find_element(By.XPATH, "//div[@class='tw-px-4 tw-py-2 tw-text-lg tw-font-semibold "
-                                           "tw-text-gray-100 tw-bg-gray-900 tw-rounded-lg tw-cursor-pointer "
-                                           "md:tw-px-0 md:tw-py-2 hover:tw-no-underline hover:tw-text-gray-100 "
-                                           "hover:tw-opacity-80']")
-    action_for_cookies.click()
-    link1 = driver.find_element(By.XPATH, "//div[@class='tw-w-3/5 tw-pr-4 tw-space-y-2']//a")
-    action = ActionChains(driver)
-    action.move_to_element(link1)
-    action.click(link1)
-    action.perform()
-    WebDriverWait(driver, 10).until(
-        EC.presence_of_element_located((By.XPATH, "//div[@class='body-content']"))
-        # Update this with an actual unique element from the new page
-    )
-    html = driver.page_source
-    soup = bs.BeautifulSoup(html, 'html.parser')
-    f = open("demo.txt", "a")
-    f.write(soup.prettify())
-    f.close()
-    paragraph = soup.find_all('p')
-    for p in paragraph:
-        print(p.text)
+from dotenv import load_dotenv
+from mistralai import Mistral
+import pandas as pd
+from bs4 import BeautifulSoup
 
-    # allURLs.append(driver.current_url)
+# getting_data_from_glassdoor()
 
 
-getting_url_from_gradcracker()
+def ai_responses():
+    load_dotenv()
+    df_new = pd.DataFrame(columns=["Company", "Job Role"])
+    key = os.getenv('API_KEY')
+    agent = os.getenv('AGENT-ID')
+    client = Mistral(api_key=key)
+    df = pd.read_csv("output2.csv")
+    for i in df.index:
+        row = str(df.loc[i, "Company"]) + "\n" + str(df.loc[i, "Job Role"]) + "\n" + str(df.loc[i, "Description"])
+        time.sleep(5)
+        chat_response = client.agents.complete(
+            agent_id="{}".format(agent),
+            messages=[
+                {
+                    "role": "user",
+                    "content": "{}".format(row),
+                },
+            ],
+        )
+        response = chat_response.choices[0].message.content
+        if response == "No":
+            continue
+        else:
+            if "," in response:
+                company, job_role = response.split(",", 1)
+            else:
+                # Handle the case where there is no comma in the response
+                company = response
+                job_role = "Unknown"  # or handle differently based on your needs
+
+            print(company, job_role)
+
+            df_new.loc[len(df_new)] = [company, job_role]
+    df_new.to_csv("JobsToApply.csv", index=False)
+
+
+
+def converting_to_text():
+    df = pd.read_csv("output.txt")
+    for i in df.index:
+
+        company_value = df.loc[i, "Company"]
+        if isinstance(company_value, str):
+            soup = BeautifulSoup(company_value, "html.parser")
+            df.loc[i, "Company"] = soup.get_text()
+        else:
+            df.loc[i, "Company"] = ""
+
+        job_role_value = df.loc[i, "Job Role"]
+        if isinstance(job_role_value, str):
+            soup = BeautifulSoup(job_role_value, "html.parser")
+            df.loc[i, "Job Role"] = soup.get_text()
+        else:
+            df.loc[i, "Job Role"] = ""
+
+        description_value = df.loc[i, "Description"]
+        if isinstance(description_value, str):
+            soup = BeautifulSoup(description_value, "html.parser")
+            df.loc[i, "Description"] = soup.get_text()
+        else:
+            df.loc[i, "Description"] = ""
+    df.to_csv("output2.csv", index=False)
+
+if __name__ == "__main__":
+    ai_responses()
